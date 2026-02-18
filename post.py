@@ -93,8 +93,14 @@ if __name__ == "__main__":
     cleanup_debug_files(files_to_clean_up_from_debugging)
     create_env_file()
     check_gemini_api_key()
-
-
-
-
+    # print(register["music"]("play"))
+    
+    # cmd = ""
+    # while cmd != "stop":
+    #     cmd = input("Enter command (pause/resume/next/prev/stop): ").strip()
+    #     print(register["music"](cmd))
     # register["link_open"]("https://youtube.com/")
+
+    # register["open_app"]("calculator")
+    # register["google_search"]("python tutorials")
+    # register["window_control"]("minimize")
