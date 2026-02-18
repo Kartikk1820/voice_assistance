@@ -93,7 +93,7 @@ if __name__ == "__main__":
     cleanup_debug_files(files_to_clean_up_from_debugging)
     create_env_file()
     check_gemini_api_key()
-    # print(register["music"]("play"))
+    # register["music"]("play")
     
     # cmd = ""
     # while cmd != "stop":
@@ -104,3 +104,10 @@ if __name__ == "__main__":
     # register["open_app"]("calculator")
     # register["google_search"]("python tutorials")
     # register["window_control"]("minimize")
+    # print(register["system_info"]("battery"))
+    # register["reminder"]("set", message="Drink water", seconds=20)
+    # register["screenshot"]()
+    # register["notes"]("list")
+    # print(register["file_search"]("screenshot_20260219_033600.png"))
+    # register["open_folder"](("downloads"))
+    # print(register["calculator"]("12 * 6"))
