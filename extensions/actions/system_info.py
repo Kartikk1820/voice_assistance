@@ -1,4 +1,4 @@
-definition = '''
+defination = '''
 function system_info(query: str) -> str:
 
 arguments:

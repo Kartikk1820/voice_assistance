@@ -1,4 +1,4 @@
-definition = '''
+defination = '''
 function open_folder(name: str) -> str:
 
 arguments:

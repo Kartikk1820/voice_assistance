@@ -1,4 +1,4 @@
-definition = '''
+defination = '''
 function screenshot(save_path: str = None) -> str:
 
 arguments:

@@ -1,4 +1,4 @@
-definition = '''
+defination = '''
 function window_control(action: str) -> str:
 
 arguments:

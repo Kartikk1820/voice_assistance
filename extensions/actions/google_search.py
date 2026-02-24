@@ -1,4 +1,4 @@
-definition = '''
+defination = '''
 function google_search(query: str) -> str:
 
 arguments:

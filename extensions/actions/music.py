@@ -1,4 +1,4 @@
-definition = '''
+defination = '''
 function music(action: str) -> str:
 
 arguments:

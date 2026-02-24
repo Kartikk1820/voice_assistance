@@ -11,6 +11,14 @@ DEBUG: bool = os.getenv("DEBUG") == "True"
 # Initialize the Gemini Client
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
+def _process_text(text: str) -> str:
+    """Remove multiple continous spaces and multiple newlines for a single space and single newline respectively."""
+    # Replace multiple spaces with a single space
+    text = re.sub(r'\s+', ' ', text)
+    # Replace multiple newlines with a single newline
+    text = re.sub(r'\n+', '\n', text)
+    return text.strip()
+
 def clean_json_response(response_text: str) -> dict:
     """
     Sanitizes the AI's output to ensure it is valid JSON.
@@ -28,13 +36,13 @@ def clean_json_response(response_text: str) -> dict:
         # Return a safe error structure if parsing fails
         return {"function_name": "error", "args": {"message": "Invalid JSON from AI"}}
 
-def think(user_input: str, tools_definitions: str) -> dict:
+def think(user_input: str, tools_definations: str) -> dict:
     """
     Decodes the natural-language user command into a structured Python dictionary.
     
     Args:
         user_input (str): The text spoken by the user.
-        tools_definitions (str): A large string containing the definitions of all available functions.
+        tools_definations (str): A large string containing the definations of all available functions.
     
     Returns:
         dict: A dictionary containing 'function_name' and 'args'.
@@ -46,8 +54,8 @@ def think(user_input: str, tools_definitions: str) -> dict:
     You are the 'Brain' of a voice assistant. Your specialized job is to map user requests to specific Python functions.
     
     ### AVAILABLE TOOLS
-    Here are the definitions of the functions you can use:
-    {tools_definitions}
+    Here are the definations of the functions you can use:
+    {tools_definations}
     
     ### INSTRUCTIONS
     1. Analyze the USER REQUEST.
@@ -57,7 +65,7 @@ def think(user_input: str, tools_definitions: str) -> dict:
     
     ### OUTPUT SCHEMA
     {{
-        "function_name": "exact_function_name_from_definition",
+        "function_name": "exact_function_name_from_defination",
         "args": {{
             "argument_name": "value"
         }}
@@ -89,7 +97,7 @@ def think(user_input: str, tools_definitions: str) -> dict:
 # --- TEST AREA (Simulating how the main system will use this) ---
 if __name__ == "__main__":
     
-    # 1. Gather definitions (In the real app, these come from your module imports)
+    # 1. Gather definations (In the real app, these come from your module imports)
     
     link_open_def = '''
     function link_open(url: str) -> None:

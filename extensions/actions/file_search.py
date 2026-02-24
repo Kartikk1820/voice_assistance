@@ -1,4 +1,4 @@
-definition = '''
+defination = '''
 function file_search(query: str, action: str = "search", path: str = None) -> str:
 
 arguments:

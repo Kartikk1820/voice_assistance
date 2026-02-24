@@ -1,4 +1,4 @@
-definition = '''
+defination = '''
 function open_app(app_name: str) -> str:
 
 arguments:

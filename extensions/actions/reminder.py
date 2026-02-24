@@ -1,4 +1,4 @@
-definition = '''
+defination = '''
 function reminder(action: str, message: str = "", seconds: int = 0, minutes: int = 0, hours: int = 0) -> str:
 
 arguments:

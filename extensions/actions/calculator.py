@@ -1,4 +1,4 @@
-definition = '''
+defination = '''
 function calculator(expression: str) -> str:
 
 arguments:

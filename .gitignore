@@ -72,3 +72,23 @@ Thumbs.db
 .idea
 *.log
 *.bak
+notes.json
+reminder
+reminders.json
+# Audio outputs
+*.mp3
+music/
+# Model directory
+model/
+# Screenshots
+Desktop/screenshots/
+screenshots/
+screenshot_*.png
+# PowerShell scripts for scheduled reminders
+reminder_*.ps1
+# Temporary files created by extensions
+*.tmp
+*_tmp.json
+*.py.tmp
+# Backup files
+*.bak

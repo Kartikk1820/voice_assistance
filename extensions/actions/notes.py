@@ -1,4 +1,4 @@
-definition = '''
+defination = '''
 function notes(action: str, content: str = "", title: str = "") -> str:
 
 arguments:

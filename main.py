@@ -45,8 +45,10 @@ def main():
     all_tools_description = extract_function_descriptions()
 
     while True:
+        mouth.say("Please dictate the next command after beep")
         print(" \n")
         print("Listening for user input...")
+        mouth.say("BEEP")
         sound = ears.listen()
         print("processing...")
         
@@ -57,6 +59,7 @@ def main():
         if "good" in sound.lower() and "bye" in sound.lower():
             mouth.say("Goodbye! Have a great day.")
             print("Exiting...")
+            mouth.save_memo_to_disk()  # Ensure we save the memo cache before exiting
             break
 
         try:
