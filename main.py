@@ -59,6 +59,7 @@ def main():
         if "good" in sound.lower() and "bye" in sound.lower():
             mouth.say("Goodbye! Have a great day.")
             print("Exiting...")
+            mouth.save_memo_to_disk()  # Ensure we save the memo cache before exiting
             break
 
         try:

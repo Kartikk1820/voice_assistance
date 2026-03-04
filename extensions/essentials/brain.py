@@ -11,6 +11,14 @@ DEBUG: bool = os.getenv("DEBUG") == "True"
 # Initialize the Gemini Client
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
+def _process_text(text: str) -> str:
+    """Remove multiple continous spaces and multiple newlines for a single space and single newline respectively."""
+    # Replace multiple spaces with a single space
+    text = re.sub(r'\s+', ' ', text)
+    # Replace multiple newlines with a single newline
+    text = re.sub(r'\n+', '\n', text)
+    return text.strip()
+
 def clean_json_response(response_text: str) -> dict:
     """
     Sanitizes the AI's output to ensure it is valid JSON.

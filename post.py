@@ -1,4 +1,7 @@
 
+import urllib.request
+import zipfile
+import shutil
 import os
 from dotenv import load_dotenv
 load_dotenv()
@@ -88,12 +91,61 @@ def check_gemini_api_key() -> None:
         print(f"GEMINI_API_KEY found: {api_key[:10]}...")
 
 
+def ensure_vosk_model(model_path: str = "model"):
+    """
+    Checks if the Vosk model exists. If not, downloads and extracts it.
+    """
+    # 1. Check if the model folder exists and isn't empty
+    if os.path.exists(model_path) and os.listdir(model_path):
+        print(f"✓ Vosk model found at '{model_path}'.")
+        return
+
+    print(f"Vosk model not found. Downloading to '{model_path}'...")
+    
+    url = "https://huggingface.co/ambind/vosk-model-small-en-us-0.15/resolve/main/vosk-model-small-en-us-0.15_c_.zip?download=true"
+    zip_path = "temp_model.zip"
+    extract_dir = "temp_extracted"
+
+    # 2. Download the zip file
+    try:
+        urllib.request.urlretrieve(url, zip_path)
+        print("✓ Download complete. Extracting...")
+    except Exception as e:
+        print(f"ERROR: Failed to download the model. {e}")
+        return
+
+    # 3. Extract the zip
+    os.makedirs(extract_dir, exist_ok=True)
+    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+        zip_ref.extractall(extract_dir)
+
+    # 4. Move the contents from the inner folder to the target model folder
+    inner_folder_name = "vosk-model-small-en-us-0.15"
+    inner_folder_path = os.path.join(extract_dir, inner_folder_name)
+
+    os.makedirs(model_path, exist_ok=True)
+
+    if os.path.exists(inner_folder_path):
+        for item in os.listdir(inner_folder_path):
+            source = os.path.join(inner_folder_path, item)
+            destination = os.path.join(model_path, item)
+            shutil.move(source, destination)
+    else:
+        print(f"Warning: Expected inner folder '{inner_folder_name}' not found in zip.")
+
+    # 5. Cleanup the temporary files
+    print("Cleaning up temporary files...")
+    os.remove(zip_path)
+    shutil.rmtree(extract_dir)
+
+    print(f"✓ Model successfully installed to '{model_path}'.")
 
 
 if __name__ == "__main__":
     cleanup_debug_files(files_to_clean_up_from_debugging)
     create_env_file()
     check_gemini_api_key()
+    ensure_vosk_model()
     # register["tell_time"]()
     # register["music"]("play")
     
