@@ -1,9 +1,16 @@
 """
-Voice Assistant GUI
-───────────────────
-Hold SPACE  → mic opens, Vosk streams words live to screen
-Release SPACE → finalises transcript, runs brain → executes action
-Hold SPACE again at any point → cancels current pipeline, starts fresh
+VoiceAssistantGUI  —  gui.py
+═════════════════════════════
+Wake word mode (new):
+  App starts → detector listens silently in background
+  "Hey Jarvis" / "Hello Jarvis" → GUI activates, records command, executes
+
+Manual mode (still works):
+  Hold SPACE → record → release → execute
+
+Analytics:
+  Every command is timed and logged via analytics module.
+  Session summary printed to terminal on close.
 """
 
 import os
@@ -23,43 +30,36 @@ from dotenv import load_dotenv
 load_dotenv()
 DEBUG: bool = os.getenv("DEBUG") == "True"
 
-import extensions.essentials.mouth as mouth
-import extensions.essentials.brain as brain
-import extensions.actions.register as rg
+import extensions.essentials.mouth    as mouth
+import extensions.essentials.brain    as brain
+import extensions.essentials.ears     as ears
+from   extensions.essentials.analytics import analytics
+import extensions.actions.register    as rg
 
 function_register = rg.import_all_from_current_directory()
 
-
-# ── Vosk model (loaded once at startup) ──────────────────────────────────────
+# ── Vosk model ────────────────────────────────────────────────────────────────
 
 MODEL_PATH = os.getenv("VOSK_MODEL_PATH", "model")
 try:
     _vosk_model = Model(MODEL_PATH)
 except Exception:
     print(f"ERROR: Could not load Vosk model at '{MODEL_PATH}'.")
-    print("Download a model from https://alphacephei.com/vosk/models and point")
-    print("VOSK_MODEL_PATH at the extracted folder (or name it 'model').")
+    print("Download from https://alphacephei.com/vosk/models")
     sys.exit(1)
 
-SAMPLE_RATE = 16000
-BLOCK_SIZE  = 1600          # ~0.1 s chunks
+SAMPLE_RATE = 16_000
+BLOCK_SIZE  = 1_600
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 def extract_function_descriptions(actions_dir: str = "extensions/actions") -> str:
     definitions = []
-    for filename in os.listdir(actions_dir):
-        if filename.endswith(".py") and not filename.startswith("__"):
-            filepath = os.path.join(actions_dir, filename)
-            spec = importlib.util.spec_from_file_location(filename[:-3], filepath)
-            module = importlib.util.module_from_spec(spec)
-            try:
-                spec.loader.exec_module(module)
-                if hasattr(module, "defination"):
-                    definitions.append(module.defination.strip())
-            except Exception as e:
-                print(f"Warning: Could not load {filename}: {e}")
+    for name, func in function_register.items():
+        module = sys.modules.get(func.__module__)
+        if module and hasattr(module, "defination"):
+            definitions.append(module.defination.strip())
     return "\n\n".join(definitions)
 
 
@@ -74,21 +74,24 @@ def call_function_by_name(function_name: str, args: dict):
 
 class VoiceAssistantGUI:
 
-    # palette
-    BG         = "#0a0a0f"
-    IDLE_MIC   = "#1e1e2e"
-    IDLE_RIM   = "#2a2a3d"
-    LISTEN_MIC = "#0d2137"
-    LISTEN_RIM = "#00aaff"
-    THINK_MIC  = "#1a0d2e"
-    THINK_RIM  = "#9b5de5"
-    EXEC_MIC   = "#1a1200"
-    EXEC_RIM   = "#f5a623"
-    TEXT_DIM   = "#4a4a6a"
-    TEXT_MID   = "#8888aa"
-    ACCENT     = "#00aaff"
-    SUCCESS    = "#00e5a0"
-    ERROR      = "#ff4466"
+    # ── palette ───────────────────────────────────────────────────────────────
+    BG          = "#0a0a0f"
+    IDLE_MIC    = "#1e1e2e"
+    IDLE_RIM    = "#2a2a3d"
+    WAKE_MIC    = "#0d1f0d"        # dark green — waiting for wake word
+    WAKE_RIM    = "#00cc44"        # green ring
+    LISTEN_MIC  = "#0d2137"
+    LISTEN_RIM  = "#00aaff"
+    THINK_MIC   = "#1a0d2e"
+    THINK_RIM   = "#9b5de5"
+    EXEC_MIC    = "#1a1200"
+    EXEC_RIM    = "#f5a623"
+    TEXT_DIM    = "#4a4a6a"
+    TEXT_MID    = "#8888aa"
+    ACCENT      = "#00aaff"
+    SUCCESS     = "#00e5a0"
+    ERROR       = "#ff4466"
+    WAKE_ACCENT = "#00cc44"
 
     SIZE   = 580
     MIC_R  = 90
@@ -96,71 +99,94 @@ class VoiceAssistantGUI:
 
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title("Voice Assistant")
+        self.root.title("Jarvis — Voice Assistant")
         self.root.configure(bg=self.BG)
         self.root.resizable(False, False)
         self.root.geometry(f"{self.SIZE}x{self.SIZE}")
-
-        self.all_tools = extract_function_descriptions()
-
-        # Pin the window to the top of the screen!
         self.root.attributes("-topmost", True)
-        
-        # ── state machine ──
-        # idle | listening | thinking | executing
-        self.state = "idle"
 
-        # ── recording state ──
-        self._recording       = False
-        self._audio_q         = queue.Queue()
-        self._audio_stream    = None
-        self._listen_thread   = None
-        self._key_debounce    = None   # after() id for release debounce
+        self.all_tools  = extract_function_descriptions()
+        self.session_id = analytics.start_session()
 
-        # ── pipeline interrupt ──
+        # state machine:  wake_standby | idle | listening | thinking | executing
+        self.state = "wake_standby"
+
+        # recording state (manual SPACE mode)
+        self._recording     = False
+        self._audio_q       : queue.Queue = queue.Queue()
+        self._audio_stream  = None
+        self._listen_thread = None
+        self._key_debounce  = None
+
+        # pipeline interrupt
         self._interrupt = threading.Event()
 
-        # ── main-thread message queue ──
-        self._msg_q = queue.Queue()
+        # main-thread message queue
+        self._msg_q : queue.Queue = queue.Queue()
 
-        # ── spinner angle ──
+        # spinner angle
         self._spin_angle = 0.0
+
+        # wake word detector reference
+        self._detector = None
 
         self._build_ui()
         self._bind_keys()
+        self._start_wake_detector()
         self._tick()
+
+    # ── wake word integration ─────────────────────────────────────────────────
+
+    def _start_wake_detector(self):
+        """Start the always-on wake word detector."""
+        self._detector = ears.start_wake_word_detection(self._on_wake_word)
+        self._set_state("wake_standby")
+
+    def _on_wake_word(self, wake_word: str):
+        """
+        Called from the WakeWordDetector background thread.
+        Post a message to the main thread via _msg_q — never touch Tk directly
+        from a background thread.
+        """
+        self._msg_q.put(("wake_word_heard", wake_word))
+        # Block the detector thread here until command pipeline finishes
+        self._wake_done_event = threading.Event()
+        self._wake_done_event.wait()   # released by _finish_wake_pipeline()
+
+    def _finish_wake_pipeline(self):
+        """Resume the wake detector after command finishes."""
+        if self._detector:
+            self._detector.resume()
+        if hasattr(self, "_wake_done_event"):
+            self._wake_done_event.set()
 
     # ── UI ────────────────────────────────────────────────────────────────────
 
     def _build_ui(self):
         W  = self.SIZE
         cx = W // 2
-        cy = W // 2 - 30   # raised: transcript lives below
+        cy = W // 2 - 30
 
         self.canvas = tk.Canvas(self.root, width=W, height=W,
                                 bg=self.BG, highlightthickness=0)
         self.canvas.pack()
 
-        # static deco rings
         for r in (160, 192, 224):
             self.canvas.create_oval(cx-r, cy-r, cx+r, cy+r,
                                     outline=self.IDLE_RIM, width=1)
 
-        # animated ring
         self._ring = self.canvas.create_oval(
             cx-self.RING_R, cy-self.RING_R,
             cx+self.RING_R, cy+self.RING_R,
             outline=self.IDLE_RIM, width=2)
 
-        # spinner arc (executing state)
-        sr = self.RING_R + 5
+        sr_ = self.RING_R + 5
         self._spinner = self.canvas.create_arc(
-            cx-sr, cy-sr, cx+sr, cy+sr,
+            cx-sr_, cy-sr_, cx+sr_, cy+sr_,
             start=0, extent=80,
             outline=self.EXEC_RIM, width=4,
             style="arc", state="hidden")
 
-        # mic body
         self._mic_body = self.canvas.create_oval(
             cx-self.MIC_R, cy-self.MIC_R,
             cx+self.MIC_R, cy+self.MIC_R,
@@ -168,7 +194,17 @@ class VoiceAssistantGUI:
 
         self._draw_mic_icon(cx, cy)
 
-        # fn name label (shown inside circle during execute)
+        # wake word indicator dot (top-right of circle)
+        dot_x = cx + self.MIC_R - 12
+        dot_y = cy - self.MIC_R + 12
+        self._wake_dot = self.canvas.create_oval(
+            dot_x-8, dot_y-8, dot_x+8, dot_y+8,
+            fill=self.WAKE_ACCENT, outline="", state="normal")
+        self._wake_dot_label = self.canvas.create_text(
+            dot_x, dot_y - 20,
+            text="WAKE", fill=self.WAKE_ACCENT,
+            font=("Courier", 7, "bold"), anchor="center")
+
         self._fn_label = self.canvas.create_text(
             cx, cy, text="",
             fill=self.EXEC_RIM,
@@ -178,16 +214,14 @@ class VoiceAssistantGUI:
             justify="center",
             state="hidden")
 
-        # status
         self._status = self.canvas.create_text(
             cx, cy + self.MIC_R + 28,
-            text="HOLD SPACE TO SPEAK",
-            fill=self.TEXT_DIM,
+            text='SAY "HEY JARVIS" TO ACTIVATE',
+            fill=self.WAKE_ACCENT,
             font=("Courier", 11, "bold"),
             anchor="center")
 
-        # live transcript box — dark pill behind the text
-        pad = 10
+        pad    = 10
         box_y1 = cy + self.MIC_R + 50
         box_y2 = cy + self.MIC_R + 110
         self._trans_box = self.canvas.create_rectangle(
@@ -195,7 +229,6 @@ class VoiceAssistantGUI:
             cx + (W//2 - 30), box_y2,
             fill="#0d0d18", outline=self.IDLE_RIM, width=1)
 
-        # transcript text inside the box
         self._transcript = self.canvas.create_text(
             cx, (box_y1 + box_y2) // 2,
             text="",
@@ -205,10 +238,9 @@ class VoiceAssistantGUI:
             width=W - 80,
             justify="center")
 
-        # bottom hint
         self.canvas.create_text(
             cx, W - 14,
-            text='hold SPACE to speak  •  release to send  •  say "goodbye" to exit',
+            text='say "hey jarvis" to activate  •  or hold SPACE  •  say "goodbye" to exit',
             fill=self.TEXT_DIM,
             font=("Courier", 7),
             anchor="center")
@@ -219,13 +251,13 @@ class VoiceAssistantGUI:
 
     def _draw_mic_icon(self, cx, cy):
         mw, mh = 20, 34
-        self._mic_rect = self.canvas.create_rectangle(
+        self._mic_rect  = self.canvas.create_rectangle(
             cx-mw, cy-mh, cx+mw, cy+mh, fill=self.TEXT_DIM, outline="")
-        self._mic_oval = self.canvas.create_oval(
+        self._mic_oval  = self.canvas.create_oval(
             cx-mw, cy-mh-mw, cx+mw, cy-mh+mw, fill=self.TEXT_DIM, outline="")
-        self._mic_stem = self.canvas.create_line(
+        self._mic_stem  = self.canvas.create_line(
             cx, cy+mh+10, cx, cy+mh+22, fill=self.TEXT_DIM, width=3)
-        self._mic_foot = self.canvas.create_line(
+        self._mic_foot  = self.canvas.create_line(
             cx-16, cy+mh+22, cx+16, cy+mh+22, fill=self.TEXT_DIM, width=3)
         self._mic_parts = [self._mic_rect, self._mic_oval,
                            self._mic_stem, self._mic_foot]
@@ -238,23 +270,19 @@ class VoiceAssistantGUI:
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _on_press(self, event=None):
-        # Cancel any pending release debounce (OS key-repeat fires press+release rapidly)
         if self._key_debounce:
             self.root.after_cancel(self._key_debounce)
             self._key_debounce = None
-
         if self._recording:
-            return  # already recording, ignore OS repeat
-
-        # Interrupt any running pipeline before starting fresh
+            return
+        # Pause wake detector when user manually holds SPACE
+        if self._detector:
+            self._detector.pause()
         self._interrupt.set()
         self._msg_q.put(("interrupted", ""))
-
-        # Start recording immediately
         self._start_recording()
 
     def _on_release(self, event=None):
-        # Debounce: wait 50 ms to confirm this isn't OS key-repeat
         if self._key_debounce:
             self.root.after_cancel(self._key_debounce)
         self._key_debounce = self.root.after(50, self._confirmed_release)
@@ -267,32 +295,30 @@ class VoiceAssistantGUI:
     def _on_close(self):
         self._interrupt.set()
         self._stop_audio_stream()
+        if self._detector:
+            self._detector.stop()
         mouth.save_memo_to_disk()
+        brain.clear_memory()
+        analytics.end_session(self.session_id)
+        analytics.print_session_summary(self.session_id)
         self.root.destroy()
 
-    # ── recording ─────────────────────────────────────────────────────────────
+    # ── recording (SPACE mode) ────────────────────────────────────────────────
 
     def _start_recording(self):
         self._recording = True
-        # flush stale audio
         while not self._audio_q.empty():
-            try:
-                self._audio_q.get_nowait()
-            except queue.Empty:
-                break
+            try: self._audio_q.get_nowait()
+            except queue.Empty: break
 
         self._set_state("listening")
 
-        # open sounddevice stream
         self._audio_stream = sd.RawInputStream(
-            samplerate=SAMPLE_RATE,
-            blocksize=BLOCK_SIZE,
-            dtype="int16",
-            channels=1,
+            samplerate=SAMPLE_RATE, blocksize=BLOCK_SIZE,
+            dtype="int16", channels=1,
             callback=self._audio_callback)
         self._audio_stream.start()
 
-        # Vosk transcription thread
         self._listen_thread = threading.Thread(
             target=self._vosk_loop, daemon=True)
         self._listen_thread.start()
@@ -307,26 +333,19 @@ class VoiceAssistantGUI:
             self._audio_stream = None
 
     def _stop_recording_and_run(self):
-        """Close mic, collect final transcript, then hand off to pipeline."""
         self._recording = False
         self._stop_audio_stream()
-        # pipeline thread picks up the final text via _vosk_loop finishing
 
     def _audio_callback(self, indata, frames, time_info, status):
         if status and DEBUG:
             print("sd status:", status)
         self._audio_q.put(bytes(indata))
 
-    # ── Vosk loop (runs in background thread while recording) ─────────────────
+    # ── Vosk loop (SPACE mode) ────────────────────────────────────────────────
 
     def _vosk_loop(self):
-        """
-        Reads audio from _audio_q, streams partial results to the transcript box,
-        then — once recording stops — finalises and hands the text to the pipeline.
-        """
-        rec = KaldiRecognizer(_vosk_model, SAMPLE_RATE)
-        confirmed = ""   # text from completed phrase chunks
-        final_text = ""
+        rec       = KaldiRecognizer(_vosk_model, SAMPLE_RATE)
+        confirmed = ""
 
         while self._recording:
             try:
@@ -335,9 +354,7 @@ class VoiceAssistantGUI:
                 continue
 
             if rec.AcceptWaveform(data):
-                # phrase boundary detected
-                result = json.loads(rec.Result())
-                chunk = result.get("text", "").strip()
+                chunk = json.loads(rec.Result()).get("text", "").strip()
                 if chunk:
                     confirmed += (" " if confirmed else "") + chunk
                     self._msg_q.put(("transcript_live", confirmed))
@@ -347,7 +364,6 @@ class VoiceAssistantGUI:
                 if live:
                     self._msg_q.put(("transcript_live", live))
 
-        # drain whatever's left after stream closed
         while True:
             try:
                 data = self._audio_q.get_nowait()
@@ -365,45 +381,77 @@ class VoiceAssistantGUI:
             return
 
         self._msg_q.put(("heard", final_text))
-        self._run_pipeline(final_text)
+        self._run_pipeline(final_text, from_wake=False)
 
     # ── pipeline ──────────────────────────────────────────────────────────────
 
-    def _run_pipeline(self, text: str):
-        """Think → execute. Checks _interrupt between stages."""
+    def _run_pipeline(self, text: str, from_wake: bool = False):
+        """
+        Think → execute. Runs in a background thread.
+        from_wake=True: resumes wake detector + unblocks detector thread when done.
+        from_wake=False (SPACE): resumes wake detector when done.
+        """
         self._interrupt.clear()
 
-        # goodbye shortcut
         if "good" in text.lower() and "bye" in text.lower():
             self._msg_q.put(("goodbye", text))
             return
 
-        # think
+        # ── think ──
         self._msg_q.put(("thinking", ""))
+        t_think = time.perf_counter()
         try:
             thoughts = brain.think(text, self.all_tools)
             if DEBUG:
-                print(f"Brain: {thoughts}")
+                print(f"[gui] Brain: {thoughts}")
         except Exception as e:
             self._msg_q.put(("error", str(e)))
+            if from_wake:
+                self._finish_wake_pipeline()
             return
+        think_ms = (time.perf_counter() - t_think) * 1000
 
         if self._interrupt.is_set():
+            if from_wake:
+                self._finish_wake_pipeline()
             return
 
-        # execute
-        fn = thoughts["function_name"]
+        fn   = thoughts.get("function_name", "error")
+        args = thoughts.get("args", {})
+
+        if fn == "error":
+            self._msg_q.put(("error", args.get("message", "Unknown error")))
+            analytics.log_command(self.session_id, text, fn, args, think_ms, 0, False,
+                                  error_msg=args.get("message", ""))
+            if from_wake:
+                self._finish_wake_pipeline()
+            return
+
+        # ── execute ──
         self._msg_q.put(("executing", fn))
         try:
-            call_function_by_name(fn, thoughts["args"])
+            with analytics.track(self.session_id, text, fn, args, think_ms=think_ms):
+                call_function_by_name(fn, args)
         except Exception as e:
             self._msg_q.put(("error", str(e)))
+            if from_wake:
+                self._finish_wake_pipeline()
             return
 
         if self._interrupt.is_set():
+            if from_wake:
+                self._finish_wake_pipeline()
             return
 
         self._msg_q.put(("done", fn))
+
+        # Resume wake detector in both modes
+        if from_wake:
+            self._msg_q.put(("resume_wake", ""))
+        else:
+            # Manual SPACE mode: resume wake detector after executing
+            if self._detector:
+                self._detector.resume()
 
     # ── tick (animation + message drain) ──────────────────────────────────────
 
@@ -417,11 +465,21 @@ class VoiceAssistantGUI:
         self.root.after(30, self._tick)
 
     def _handle(self, msg, data):
-        if msg == "transcript_live":
+        if msg == "wake_word_heard":
+            # Wake word triggered — switch to listening via Google STT
+            self._set_state("listening")
+            self._update(self._status, f"🔔  '{data.upper()}' — LISTENING…", self.WAKE_ACCENT)
+            self._set_transcript("", self.TEXT_MID)
+            # Run Google STT + pipeline in background thread
+            threading.Thread(
+                target=self._wake_pipeline_thread,
+                args=(data,), daemon=True
+            ).start()
+
+        elif msg == "transcript_live":
             self._set_transcript(data, self.LISTEN_RIM)
 
         elif msg == "heard":
-            # transcript stays on screen while thinking
             self._set_transcript(data, self.TEXT_MID)
 
         elif msg == "thinking":
@@ -433,47 +491,83 @@ class VoiceAssistantGUI:
         elif msg == "done":
             self._update(self._status, f"✓  {data}", self.SUCCESS)
             self._set_transcript("", self.TEXT_MID)
-            self.root.after(1800, self._return_idle)
+            self.root.after(1800, self._return_wake_standby)
 
         elif msg == "error":
             self._update(self._status, "ERROR", self.ERROR)
             self._set_transcript(data, self.ERROR)
-            self.root.after(2500, self._return_idle)
+            self.root.after(2500, self._return_wake_standby)
 
         elif msg == "no_speech":
             self._set_transcript("(no speech detected)", self.TEXT_DIM)
-            self.root.after(1200, self._return_idle)
+            self.root.after(1200, self._return_wake_standby)
 
         elif msg == "interrupted":
-            # wipe transcript immediately so the new recording starts clean
             self._set_transcript("", self.TEXT_MID)
-            # state will be set to listening by _start_recording right after
+
+        elif msg == "resume_wake":
+            self._finish_wake_pipeline()
+            self._return_wake_standby()
 
         elif msg == "goodbye":
             self._update(self._status, "GOODBYE!", self.ACCENT)
             mouth.say("Goodbye! Have a great day.")
             mouth.save_memo_to_disk()
+            brain.clear_memory()
+            analytics.end_session(self.session_id)
+            analytics.print_session_summary(self.session_id)
             self.root.after(1000, self.root.destroy)
+
+    def _wake_pipeline_thread(self, wake_word: str):
+        """
+        Runs in background thread after wake word fires.
+        Uses Google STT (high accuracy) for the command.
+        """
+        mouth.say("Yes?")
+        command = ears.listen()
+        if DEBUG:
+            print(f"[gui] Wake command: {command!r}")
+
+        if not command:
+            self._msg_q.put(("no_speech", ""))
+            self._finish_wake_pipeline()
+            return
+
+        self._msg_q.put(("heard", command))
+        self._run_pipeline(command, from_wake=True)
 
     # ── state ─────────────────────────────────────────────────────────────────
 
     def _set_state(self, state: str, fn_name: str = ""):
         self.state = state
 
-        spin_vis = "normal" if state == "executing" else "hidden"
+        spin_vis = "normal" if state == "executing"                else "hidden"
         self.canvas.itemconfig(self._spinner, state=spin_vis)
 
-        mic_vis = "hidden" if state == "executing" else "normal"
+        mic_vis  = "hidden" if state == "executing"                else "normal"
         for p in self._mic_parts:
             self.canvas.itemconfig(p, state=mic_vis)
 
-        fn_vis = "normal" if state == "executing" else "hidden"
+        fn_vis   = "normal" if state == "executing"                else "hidden"
         self.canvas.itemconfig(self._fn_label, state=fn_vis)
         if fn_name:
             self.canvas.itemconfig(self._fn_label,
                                    text=fn_name.replace("_", " ").upper())
 
-        if state == "idle":
+        # Wake dot: visible in wake_standby only
+        dot_vis = "normal" if state == "wake_standby" else "hidden"
+        self.canvas.itemconfig(self._wake_dot,       state=dot_vis)
+        self.canvas.itemconfig(self._wake_dot_label, state=dot_vis)
+
+        if state == "wake_standby":
+            self.canvas.itemconfig(self._mic_body,
+                                   fill=self.WAKE_MIC, outline=self.WAKE_RIM)
+            self.canvas.itemconfig(self._ring, outline=self.WAKE_RIM)
+            self.canvas.itemconfig(self._trans_box, outline=self.WAKE_RIM)
+            self._recolor_mic(self.WAKE_RIM)
+            self._update(self._status, 'SAY "HEY JARVIS" TO ACTIVATE', self.WAKE_ACCENT)
+
+        elif state == "idle":
             self.canvas.itemconfig(self._mic_body,
                                    fill=self.IDLE_MIC, outline=self.IDLE_RIM)
             self.canvas.itemconfig(self._ring, outline=self.IDLE_RIM)
@@ -502,8 +596,8 @@ class VoiceAssistantGUI:
             self._update(self._status, "⚙  EXECUTING", self.EXEC_RIM)
             self._spin_angle = 0.0
 
-    def _return_idle(self):
-        self._set_state("idle")
+    def _return_wake_standby(self):
+        self._set_state("wake_standby")
         self._set_transcript("", self.TEXT_MID)
 
     def _recolor_mic(self, color):
@@ -522,7 +616,15 @@ class VoiceAssistantGUI:
         cx, cy = self._cx, self._cy
         t = time.time()
 
-        if self.state == "listening":
+        if self.state == "wake_standby":
+            # slow gentle pulse — green, calm
+            pulse = 0.5 + 0.5 * math.sin(t * 1.2)
+            r = self.RING_R + 6 * pulse
+            self.canvas.coords(self._ring, cx-r, cy-r, cx+r, cy+r)
+            self.canvas.itemconfig(self._ring, outline=self.WAKE_RIM,
+                                   width=1 + pulse)
+
+        elif self.state == "listening":
             pulse = 0.5 + 0.5 * math.sin(t * 6)
             r = self.RING_R + 18 * pulse
             self.canvas.coords(self._ring, cx-r, cy-r, cx+r, cy+r)
@@ -540,8 +642,8 @@ class VoiceAssistantGUI:
             self.canvas.coords(self._ring, cx-r, cy-r, cx+r, cy+r)
             self.canvas.itemconfig(self._ring, outline=self.EXEC_RIM, width=1)
             self._spin_angle = (self._spin_angle + 8) % 360
-            sr = self.RING_R + 5
-            self.canvas.coords(self._spinner, cx-sr, cy-sr, cx+sr, cy+sr)
+            sr_ = self.RING_R + 5
+            self.canvas.coords(self._spinner, cx-sr_, cy-sr_, cx+sr_, cy+sr_)
             self.canvas.itemconfig(self._spinner, start=self._spin_angle)
 
         else:  # idle
@@ -555,7 +657,7 @@ class VoiceAssistantGUI:
 
 def main():
     root = tk.Tk()
-    app = VoiceAssistantGUI(root)
+    app  = VoiceAssistantGUI(root)
     root.mainloop()
 
 

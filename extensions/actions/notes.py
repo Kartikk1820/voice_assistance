@@ -29,11 +29,13 @@ NOTES_FILE = os.path.join(BASE_DIR, "notes.json")
 
 # ── Data helpers ──────────────────────────────────────────────────────────────
 
-def _load() -> list:
-    if os.path.exists(NOTES_FILE):
-        with open(NOTES_FILE, "r") as f:
-            return json.load(f)
-    return []
+def _load():
+    if not os.path.exists(NOTES_FILE):
+        with open(NOTES_FILE, "w") as f:
+            json.dump([], f)
+
+    with open(NOTES_FILE, "r") as f:
+        return json.load(f)
 
 def _save(data: list):
     with open(NOTES_FILE, "w") as f:
