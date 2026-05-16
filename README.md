@@ -1,18 +1,20 @@
 # Voice Assistant
 
-A highly extensible, Python-based desktop voice assistant featuring a dynamic extension system and a sleek graphical user interface. Inspired by advanced personal assistants, this project focuses on fast offline speech recognition and a modular architecture that makes adding new features incredibly easy.
+A highly extensible, Python-based desktop voice assistant featuring a dynamic extension system and a sleek graphical user interface. Inspired by advanced personal assistants, this project pairs fast, local speech-to-text processing with the intelligence of an LLM API to interpret commands and execute custom actions.
 
 ## Features
 
-- **Local Offline Speech Recognition**: Uses [Vosk](https://alphacephei.com/vosk/) for fast, private, and offline speech-to-text.
-- **Dynamic Extension System**: The `brain` automatically registers and interprets actions inside the `extensions/actions/` directory, allowing you to add new skills seamlessly without modifying the core logic.
+- **Local Speech Recognition**: Uses [Vosk](https://alphacephei.com/vosk/) for fast and responsive local speech-to-text.
+- **LLM-Powered Intelligence**: Uses an LLM API as the "brain" to understand natural language and dynamically trigger the correct system actions.
+- **Dynamic Extension System**: Automatically registers and interprets actions inside the `extensions/actions/` directory, allowing you to add new skills seamlessly without modifying the core logic.
 - **Interactive GUI**: A modern, animated Tkinter-based graphical interface that provides visual feedback across different states (Idle, Listening, Thinking, Executing).
 - **Extensible Architecture**: Divided into core essentials (`ears`, `mouth`, `brain`) and actionable extensions for maintainable, clean code.
 
 ## Prerequisites
 
 - **Python 3.10+** (Recommended)
-- **Vosk Language Model**: You need to download a Vosk model to run offline speech recognition.
+- **Vosk Language Model**: You need to download a Vosk model to run local speech recognition.
+- **LLM API Key**: Required for the brain to process commands.
 
 ## Installation
 
@@ -38,10 +40,11 @@ A highly extensible, Python-based desktop voice assistant featuring a dynamic ex
    - Extract the contents and place the folder in the project root directory. Rename the extracted folder to `model` (or specify the path in your `.env` file).
 
 5. **Environment Configuration:**
-   Create a `.env` file in the root directory:
+   Create a `.env` file in the root directory and add your API keys and configuration:
    ```env
    DEBUG=True
    VOSK_MODEL_PATH=model
+   # Add your LLM API Key here (e.g., GEMINI_API_KEY, OPENAI_API_KEY, etc. based on your backend)
    ```
 
 ## Usage
@@ -54,7 +57,7 @@ You can run the assistant in either GUI mode or CLI mode.
 python gui.py
 ```
 - **Hold SPACE**: Activates the microphone and streams live transcription to the screen.
-- **Release SPACE**: Finalizes the transcript and executes the mapped action.
+- **Release SPACE**: Finalizes the transcript, sends it to the LLM brain, and executes the mapped action.
 - Say **"goodbye"** or close the window to exit.
 
 ### Running in CLI Mode
