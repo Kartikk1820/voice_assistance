@@ -1,93 +1,263 @@
 # Voice Assistant
 
-A highly extensible, Python-based desktop voice assistant featuring a dynamic extension system and a sleek graphical user interface. Inspired by advanced personal assistants, this project pairs fast, local speech-to-text processing with the intelligence of an LLM API to interpret commands and execute custom actions.
+An intelligent, extensible, and modern Python-based voice assistant powered by advanced speech recognition and LLM APIs. Designed with a modular architecture and dynamic action system, this assistant can understand natural language commands, execute custom actions, and provide an interactive desktop experience through a sleek graphical interface.
 
-## Features
+---
 
-- **Local Speech Recognition**: Uses [Vosk](https://alphacephei.com/vosk/) for fast and responsive local speech-to-text.
-- **LLM-Powered Intelligence**: Uses an LLM API as the "brain" to understand natural language and dynamically trigger the correct system actions.
-- **Dynamic Extension System**: Automatically registers and interprets actions inside the `extensions/actions/` directory, allowing you to add new skills seamlessly without modifying the core logic.
-- **Interactive GUI**: A modern, animated Tkinter-based graphical interface that provides visual feedback across different states (Idle, Listening, Thinking, Executing).
-- **Extensible Architecture**: Divided into core essentials (`ears`, `mouth`, `brain`) and actionable extensions for maintainable, clean code.
+## ✨ Features
+
+* **Real-Time Speech Recognition**
+  Powered by [Vosk](https://alphacephei.com/vosk/) for fast and accurate voice-to-text transcription.
+
+* **LLM-Powered Command Processing**
+  Uses powerful LLM APIs to understand natural language, interpret intent, and dynamically trigger actions.
+
+* **Dynamic Extension System**
+  Easily add new capabilities by creating action modules inside the `extensions/actions/` directory without modifying the core engine.
+
+* **Modern Interactive GUI**
+  Beautiful Tkinter-based interface with animated state transitions:
+
+  * Idle
+  * Listening
+  * Thinking
+  * Executing
+
+* **Modular Architecture**
+  Organized into scalable components:
+
+  * `ears` → Speech recognition
+  * `brain` → LLM processing & intent handling
+  * `mouth` → Voice/text responses
+  * `extensions` → Custom actions and integrations
+
+* **Developer Friendly**
+  Clean and maintainable codebase designed for rapid feature development and experimentation.
+
+---
+
+# 📂 Project Structure
+
+```bash
+voice-assistant/
+│
+├── brain/                  # LLM processing & intent handling
+├── ears/                   # Speech recognition modules
+├── mouth/                  # Response generation modules
+├── extensions/
+│   └── actions/            # Custom dynamic actions
+│
+├── gui.py                  # GUI entry point
+├── main.py                 # CLI entry point
+├── requirements.txt
+└── README.md
+```
+
+---
+
+# 🚀 Getting Started
 
 ## Prerequisites
 
-- **Python 3.10+** (Recommended)
-- **Vosk Language Model**: You need to download a Vosk model to run local speech recognition.
-- **LLM API Key**: Required for the brain to process commands.
+Before running the project, make sure you have:
 
-## Installation
+* **Python 3.10+**
+* **LLM API Key** (OpenAI, Gemini, or compatible provider)
+* **Vosk Speech Model**
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/yourusername/voice-assistant.git
-   cd voice-assistant
-   ```
+---
 
-2. **Set up a virtual environment (optional but recommended):**
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows use: venv\Scripts\activate
-   ```
+# ⚙️ Installation
 
-3. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
+## 1. Clone the Repository
 
-4. **Download the Vosk Model:**
-   - Download a compatible model from [Vosk Models](https://alphacephei.com/vosk/models) (e.g., `vosk-model-small-en-us-0.15`).
-   - Extract the contents and place the folder in the project root directory. Rename the extracted folder to `model` (or specify the path in your `.env` file).
+```bash
+git clone https://github.com/yourusername/voice-assistant.git
+cd voice-assistant
+```
 
-5. **Environment Configuration:**
-   Create a `.env` file in the root directory and add your API keys and configuration:
-   ```env
-   DEBUG=True
-   VOSK_MODEL_PATH=model
-   # Add your LLM API Key here (e.g., GEMINI_API_KEY, OPENAI_API_KEY, etc. based on your backend)
-   ```
+---
 
-## Usage
+## 2. Create a Virtual Environment (Recommended)
 
-You can run the assistant in either GUI mode or CLI mode.
+### Windows
 
-### Running with the GUI (Recommended)
+```bash
+python -m venv venv
+venv\Scripts\activate
+```
+
+### Linux / macOS
+
+```bash
+python -m venv venv
+source venv/bin/activate
+```
+
+---
+
+## 3. Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+## 4. Configure Environment Variables
+
+Create a `.env` file in the project root:
+
+```env
+DEBUG=True
+
+# Speech Recognition Model Path
+VOSK_MODEL_PATH=model
+
+# LLM API Keys
+OPENAI_API_KEY=your_api_key_here
+# or
+GEMINI_API_KEY=your_api_key_here
+```
+
+---
+
+## 5. Download Speech Recognition Model
+
+Download a compatible model from:
+
+👉 [https://alphacephei.com/vosk/models](https://alphacephei.com/vosk/models)
+
+Example:
+
+```bash
+vosk-model-small-en-us-0.15
+```
+
+Extract the downloaded model and place it in the project root directory:
+
+```bash
+/voice-assistant/model
+```
+
+---
+
+# ▶️ Usage
+
+## Launch GUI Mode (Recommended)
 
 ```bash
 python gui.py
 ```
-- **Hold SPACE**: Activates the microphone and streams live transcription to the screen.
-- **Release SPACE**: Finalizes the transcript, sends it to the LLM brain, and executes the mapped action.
-- Say **"goodbye"** or close the window to exit.
 
-### Running in CLI Mode
+### Controls
+
+| Action          | Function          |
+| --------------- | ----------------- |
+| Hold `SPACE`    | Start voice input |
+| Release `SPACE` | Process command   |
+| Say `"goodbye"` | Exit assistant    |
+
+---
+
+## Launch CLI Mode
 
 ```bash
 python main.py
 ```
-- Wait for the beep, then dictate your command.
-- The assistant will process your speech and execute the appropriate action.
-- Say **"goodbye"** to exit.
 
-## Adding New Skills (Extensions)
+### Workflow
 
-The true power of this assistant lies in its modularity. To add a new skill, simply create a new Python file in the `extensions/actions/` directory. 
+1. Wait for the microphone prompt
+2. Speak your command
+3. The assistant processes the request
+4. Corresponding action is executed automatically
 
-The `brain` will automatically discover your file, read the `defination` variable, and register the action for use.
+---
 
-Example (`extensions/actions/my_custom_action.py`):
+# 🧩 Creating Custom Extensions
+
+One of the most powerful features of this assistant is its dynamic extension system.
+
+To create a new capability:
+
+1. Add a new Python file inside:
+
+```bash
+extensions/actions/
+```
+
+2. Define the action metadata and implementation.
+
+---
+
+## Example Extension
+
 ```python
-defination = """
-Action: my_custom_action
-Description: Tells the user a joke.
+definition = """
+Action: tell_joke
+Description: Tells a programming joke.
 Arguments: None
 """
 
-def my_custom_action():
-    print("Why do programmers prefer dark mode? Because light attracts bugs!")
-    return "Joke delivered."
+def tell_joke():
+    return "Why do programmers prefer dark mode? Because light attracts bugs!"
 ```
 
-## License
+The assistant automatically:
 
-This project is open-source and available under the terms of the MIT License. See the [LICENSE](LICENSE) file for more information.
+* Discovers the module
+* Registers the action
+* Makes it available through natural language commands
+
+No core modifications required.
+
+---
+
+# 🛠 Tech Stack
+
+* **Python**
+* **Tkinter**
+* **Vosk**
+* **LLM APIs**
+* **dotenv**
+* **Modular Plugin Architecture**
+
+---
+
+# 📌 Future Improvements
+
+* Multi-language support
+* Wake-word activation
+* Web automation actions
+* Smart home integrations
+* Memory & conversation history
+* Voice synthesis improvements
+* Cross-platform packaging
+
+---
+
+# 🤝 Contributing
+
+Contributions are welcome.
+
+If you'd like to improve the project:
+
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Open a pull request
+
+---
+
+# 📄 License
+
+This project is licensed under the MIT License.
+
+See the [LICENSE](LICENSE) file for more information.
+
+---
+
+# ⭐ Support
+
+If you found this project useful, consider giving it a star on GitHub to support development and future improvements.
